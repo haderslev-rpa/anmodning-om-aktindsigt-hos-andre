@@ -1,0 +1,30 @@
+[project]
+name = "anmod-om-aktindsigt-hos-andre"
+version = "0.1.0"
+description = "Proces for indhentning af sagsakter hos myndigheder og virksomheder"
+requires-python = ">=3.13"
+dependencies = [
+  "automation-server-client",
+  "q-haderslev-vbo",
+  "q-sharepoint-api",
+  "q-word",
+  "q-gotenberg",
+  "q-signeringsportalen-api",
+  "q-fasit",
+]
+
+[tool.uv.sources]
+automation-server-client = { git = "https://github.com/odense-rpa/automation-server-client.git", tag = "v0.3.0" }
+q-haderslev-vbo = { git = "https://github.com/haderslev-rpa/q-haderslev-vbo.git", branch = "main" }
+q-sharepoint-api = { git = "https://github.com/haderslev-rpa/q-sharepoint-api.git", branch = "main" }
+q-word = { git = "https://github.com/haderslev-rpa/q-word.git", branch = "main" }
+q-gotenberg = { git = "https://github.com/haderslev-rpa/q-gotenberg.git", branch = "main" }
+q-signeringsportalen-api = { git = "INDSAET_REPOSITORY_URL", branch = "main" }
+q-fasit = { git = "https://github.com/haderslev-rpa/q-fasit.git", branch = "main" }
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+python_files = ["test_*.py"]

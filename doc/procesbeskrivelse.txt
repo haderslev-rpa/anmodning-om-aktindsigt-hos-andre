@@ -1,0 +1,972 @@
+PROCESDOKUMENTATION
+ANMOD OM AKTINDSIGT HOS ANDRE
+
+Formål med dokumentet
+====================
+
+Dette dokument samler de beslutninger, der er truffet om processen "Anmod om aktindsigt hos andre".
+Dokumentet skal bruges som fælles hukommelse ved videre udvikling, test, fejlsøgning og vedligeholdelse.
+
+Dokumentet beskriver:
+
+- Forretningsflowet.
+- Rollefordelingen mellem sagsbehandler, mailrobot og hovedrobot.
+- SharePoint-listens funktion.
+- Automation Server-køen og ATS-states.
+- Word-skabeloner og PDF-konvertering.
+- Signeringsportalen.
+- Fasit-integrationen.
+- Mailintegrationen.
+- Afslutningslogikken på tværs af flere SharePoint-linjer.
+- Konfiguration, test og kendte åbne punkter.
+
+
+1. OVERORDNET FORMÅL
+====================
+
+Processen skal hjælpe sagsbehandleren med at indhente sagsakter hos en virksomhed eller myndighed.
+
+Processen består overordnet af to forretningsdele:
+
+1. Indhentning og dokumentation af borgerens samtykke.
+2. Anmodning om sagsakter hos virksomhed eller myndighed og behandling af det efterfølgende svar.
+
+Derudover findes en særskilt mailrobot, som modtager mails med sagsakter og lægger dem på det korrekte SharePoint-item.
+
+Robotten skal være genstartbar. Handlinger, som allerede er udført, må ikke udføres igen ved genkørsel. Det sikres med states i ATS.
+
+
+2. VIGTIGE BEGREBER
+===================
+
+Samlet sag
+----------
+
+En samlet sag identificeres med:
+
+CPR + Sagsnr
+
+Der kan ligge flere SharePoint-items med samme CPR og samme sagsnummer. Hvert item kan eksempelvis repræsentere en anden virksomhed eller myndighed og derfor have sit eget P-nummer.
+
+SharePoint-item
+---------------
+
+Et SharePoint-item er én linje i SharePoint-listen. Itemets SharePoint-id bruges som entydig teknisk nøgle mellem SharePoint og ATS.
+
+ATS-item
+--------
+
+Et ATS-item er robottens work item i Automation Server. SharePoint-data gemmes under:
+
+item.data["box"]["sharepoint"]
+
+SharePoint er den forretningsmæssige sandhed for status og gruppering på CPR + Sagsnr. ATS bruges til køstyring, states, defer og tekniske arbejdsdata.
+
+
+3. ROLLER OG ANSVAR
+===================
+
+Sagsbehandleren
+---------------
+
+Sagsbehandleren skal:
+
+- Oprette og vedligeholde SharePoint-itemet.
+- Udfylde CPR, sagsnummer, P-nummer og institutionsnavn.
+- Registrere om samtykke er mundtligt/skriftligt eller digitalt.
+- Ved mundtligt/skriftligt samtykke tage et billede af dokumentationen og vedhæfte billedet på SharePoint-itemet.
+- Kontrollere om alle forventede sagsakter er modtaget.
+- Journalisere eller behandle sagsakter fagligt efter den arbejdsgang, der gælder.
+- Vurdere det videre forløb, hvis myndigheden ikke svarer efter rykkeren.
+- Sætte "Behandles af" tilbage til "Robot", når robotten igen skal fortsætte.
+- Sætte "Slet linjen?" til "Ja", når itemet er fagligt kontrolleret og må afsluttes.
+
+Mailrobotten
+------------
+
+Mailrobotten skal:
+
+- Læse mails direkte fra en særlig robotpostkasses indbakke.
+- Læse de første 5 tegn i mailteksten.
+- Fjerne alle tegn, der ikke er cifre.
+- Bruge de resterende cifre som SharePoint-id.
+- Finde det tilsvarende SharePoint-item.
+- Gemme hele mailen som en .msg-fil med et unikt navn.
+- Lægge .msg-filen ind som vedhæftning på SharePoint-itemet.
+- Sætte "Modtaget sagsagt?" til "Ja".
+- Sætte "Behandles af" til "Robot".
+- Slette mailen fra postkassen, når filupload og SharePoint-opdatering er lykkedes.
+
+Mailrobotten må ikke skrive Robotkommentar. Hovedrobotten skriver kommentaren, når .msg-filen er lagt ind i Fasit.
+
+Hovedrobotten
+-------------
+
+Hovedrobotten skal:
+
+- Hente eller ajourføre ATS-items fra SharePoint.
+- Behandle samtykkeflowet.
+- Generere brev til borgeren.
+- Sende borgerbrevet til Signeringsportalen.
+- Kontrollere signeringsstatus.
+- Gemme underskrevet samtykke i SharePoint og Fasit.
+- Generere brev til virksomhed eller myndighed.
+- Sende myndighedsbrevet gennem Fasit med samtykke som bilag.
+- Sende én rykker efter den konfigurerede frist.
+- Gemme nye .msg-filer i Fasit uden dubletter.
+- Skrive løbende Robotkommentarer i SharePoint.
+- Afvente sagsbehandlerens godkendelse via "Slet linjen?".
+- Kontrollere andre items med samme CPR + Sagsnr.
+- Oprette den afsluttende Fasit-opgave på det sidste item.
+- Slette SharePoint-itemet og complete ATS-itemet som sidste tekniske trin.
+
+
+4. SHAREPOINT-LISTEN
+====================
+
+Centrale kolonner
+-----------------
+
+Følgende felter er en del af den planlagte proces:
+
+- id
+- CPR
+- Sagsnr
+- P-nummer
+- Institutionsnavn
+- Er der givet samtykke?
+- Brevstatus til virksomhed-myndig?
+- Modtaget sagsagt?
+- Robotkommentar
+- Behandles af
+- Slet linjen?
+- Vedhæftede filer
+
+Værdier i "Er der givet samtykke?"
+-----------------------------------
+
+- Nej
+- Mundtligt/skriftligt
+- Digitalt
+
+Værdier i "Behandles af"
+-------------------------
+
+- Robot
+- Sagsbehandler
+
+Værdier i "Slet linjen?"
+-------------------------
+
+- Nej
+- Ja
+
+Værdier i brevstatus
+--------------------
+
+- Ikke sendt
+- Sendt brev
+- Sendt rykkerbrev
+
+Robotkommentar
+--------------
+
+Robotkommentar skal være et append-felt. Nye kommentarer tilføjes med dato og tidspunkt, så sagsbehandleren kan følge processen.
+
+Mailrobotten skriver ikke Robotkommentar.
+
+Eksempler på hovedrobottens kommentarer:
+
+- Brev er sendt til borger og afventer digital signering.
+- Borger har endnu ikke underskrevet samtykket. Sagen afventer fortsat digital signering.
+- Borger har underskrevet samtykket. Feltet "Er der givet samtykke?" er ændret til "Digitalt".
+- Det underskrevne samtykke er gemt på SharePoint-itemet med navnet "Samtykke modtaget digital.pdf".
+- Samtykket "Samtykke modtaget digital.pdf" er gemt i Fasit.
+- Brev er sendt til [institutionsnavn] med samtykket vedhæftet.
+- Der er ikke registreret modtagne sagsakter. Rykkerbrev er sendt.
+- Der er fortsat ikke registreret modtagne sagsakter efter rykkerbrevet. Sagsbehandler skal beslutte det videre forløb.
+- Den nye fil "[filnavn].msg" er lagt ind i Fasit.
+- Itemet afventer sagsbehandlerens kontrol og markering i feltet "Slet linjen?".
+- Der findes en anden SharePoint-linje med samme CPR og sagsnummer, som endnu ikke er klar til afslutning. Der oprettes derfor ikke en Fasit-opgave endnu.
+
+Kommentaren "Sagsakten er registreret som behandlet af robotten" skal ikke bruges, fordi det er en selvfølge.
+
+
+5. FILKLASSIFIKATION
+====================
+
+Billedfiler
+-----------
+
+Følgende filtyper er dokumentation for mundtligt/skriftligt samtykke:
+
+- .png
+- .jpg
+- .jpeg
+
+.msg-filer
+----------
+
+.msg-filer er modtagne sagsakter eller mails med sagsakter.
+
+Digitalt samtykke
+-----------------
+
+Den underskrevne PDF skal gemmes på SharePoint-itemet med det faste navn:
+
+Samtykke modtaget digital.pdf
+
+Den samme PDF skal efterfølgende gemmes i Fasit.
+
+
+6. MAILROBOTENS FLOW
+====================
+
+1. Læs postkasseadressen fra configuration.py.
+2. Hent mails direkte fra indbakken.
+3. For hver mail læses de første 5 tegn i mailteksten.
+4. Fjern alle bogstaver, mellemrum og øvrige tegn, der ikke er cifre.
+5. Resultatet bruges som SharePoint-id.
+6. Find SharePoint-itemet ud fra id.
+7. Hvis id ikke kan læses, eller itemet ikke findes entydigt, må mailen ikke slettes.
+8. Gem mailen som .msg med et unikt navn.
+9. Filnavnet skal indeholde dato og tidspunkt for robottens behandling.
+10. Hvis navnet allerede findes, tilføjes et løbenummer som _001, _002 osv.
+11. Upload .msg-filen som vedhæftning på SharePoint-itemet.
+12. Sæt "Modtaget sagsagt?" til "Ja".
+13. Sæt "Behandles af" til "Robot".
+14. Bekræft at upload og feltopdatering er lykkedes.
+15. Slet derefter mailen fra indbakken.
+
+Eksempel på filnavn:
+
+20261019_143012_svar.msg
+
+Ved dublet:
+
+20261019_143012_001_svar.msg
+
+Postkassen skal være en værdi i configuration.py. Credentials og secrets må ikke hardkodes.
+
+
+7. QUEUE-PRODUCER OG ATS
+========================
+
+Queue-mode
+----------
+
+Processens producer-del køres med --queue.
+
+Produceren skal:
+
+1. Hente SharePoint-items.
+2. Kun vælge items hvor "Behandles af" = "Robot".
+3. Bruge SharePoint-id i en entydig ATS-reference, eksempelvis:
+
+sharepoint-123
+
+4. Kontrollere om et ATS-item allerede findes.
+5. Hvis itemet ikke findes, oprettes det.
+6. Hvis itemet findes, skal SharePoint-data ajourføres i:
+
+item.data["box"]["sharepoint"]
+
+Dubletkontrol
+-------------
+
+ATS-funktioner kan bruges til at finde items via værdier i box, eksempelvis sharepoint.item_id. SharePoint anvendes dog til beslutningen om, hvorvidt andre linjer med samme CPR + Sagsnr stadig findes.
+
+Worker-mode
+-----------
+
+Uden --queue behandles work items ét ad gangen.
+
+Ved lokal debug kan DEBUG_ITEM_REFERENCE anvendes til at vælge ét bestemt NEW-item.
+
+
+8. STATES OG GENSTARTBARHED
+===========================
+
+States ligger i behandel.py. De må ikke ligge i configuration.py.
+
+Planlagte states:
+
+0.5 Brev til borger genereret
+1.0 Brev sendt til borger og afventer signering
+1.2 Påmindelse om signering sendt
+1.5 Digitalt samtykke modtaget
+1.6 Digitalt samtykke gemt i SharePoint
+1.7 Digitalt samtykke gemt i Fasit
+1.8 Brev til myndighed genereret
+2.0 Brev sendt til virksomhed-myndighed
+2.4 Rykkerbrev til myndighed genereret
+2.5 Rykkerbrev sendt til virksomhed-myndighed
+3.0 Sagsakt gemt i Fasit: [unikt filnavn]
+4.0 Afsluttende opgave oprettet i Fasit
+
+Formål
+------
+
+Før hvert procestrin kontrolleres den relevante state.
+
+Hvis state findes, springes trinnet over.
+Hvis state mangler, udføres handlingen, og state sættes først, når handlingen er bekræftet.
+
+Den filspecifikke state for .msg-filer skal inkludere filnavnet. Det gør, at flere sagsakter på samme SharePoint-item behandles enkeltvis uden at samme fil gemmes i Fasit to gange.
+
+
+9. WORD-SKABELONER OG PDF
+=========================
+
+Skabeloner
+----------
+
+Der planlægges tre Word-skabeloner på SharePoint-sitet Automatisering:
+
+- Samtykke_til_borger.docx
+- Anmodning_til_myndighed.docx
+- Rykker_til_myndighed.docx
+
+Skabelonerne placeres i et dokumentbibliotek og en mappe, som angives i configuration.py.
+
+Procesrepositoryet må ikke indeholde lokale kopier som den autoritative kilde. SharePoint er kilden til de aktuelle skabeloner.
+
+q-word
+------
+
+q-word udfylder pladsholdere i formatet:
+
+[[DATO]]
+[[SAGSNUMMER]]
+[[INSTITUTIONSNAVN]]
+
+q-word modtager DOCX som bytes og returnerer udfyldt DOCX som bytes.
+
+Pladsholdernavne skrives med store bogstaver. Den indsatte værdi arver formatering fra pladsholderens første tegn.
+
+q-gotenberg
+------------
+
+Den udfyldte DOCX konverteres til PDF med q-gotenberg.
+
+q-gotenberg modtager filnavn og filindhold som bytes og returnerer PDF som bytes.
+
+Gotenberg-adressen må ikke ligge i configuration.py eller kildekoden. Den hentes fra Automation Server-credentialen API_GOTENBERG.
+
+Dokumentflow
+------------
+
+SharePoint Word-skabelon
+→ q-word
+→ udfyldt DOCX som bytes
+→ q-gotenberg
+→ PDF som bytes
+→ Signeringsportalen eller Fasit
+
+Test
+----
+
+Der skal være en manuel template-test i repositoryets rod. Testen skal:
+
+1. Hente Word-skabelonen fra SharePoint.
+2. Udfylde testværdier.
+3. Konvertere DOCX til PDF.
+4. Bekræfte at både DOCX- og PDF-bytes er oprettet.
+
+Skabelonen skal testes, før rigtige signerings- eller Fasit-kald aktiveres.
+
+
+10. DE TO BREVFLOWS
+===================
+
+Det er vigtigt, at de to breve ikke blandes sammen.
+
+Brev til borgeren
+-----------------
+
+Formål:
+
+At få borgerens digitale samtykke.
+
+Teknisk flow:
+
+SharePoint Word-skabelon
+→ q-word
+→ q-gotenberg
+→ PDF
+→ Signeringsportalen
+→ borgeren modtager via Digital Post
+
+Dette brev sendes ikke gennem Fasit.
+
+Brev til virksomhed eller myndighed
+-----------------------------------
+
+Formål:
+
+At anmode om sagsakter.
+
+Teknisk flow:
+
+SharePoint Word-skabelon
+→ q-word
+→ q-gotenberg
+→ PDF
+→ Fasit
+→ virksomhed eller myndighed findes via P-nummer
+
+Samtykkedokumentet skal vedhæftes myndighedsbrevet.
+
+P-nummeret bruges til teknisk modtageropslag i Fasit. P-nummeret skal ikke nødvendigvis stå i selve brevet.
+
+Rykkerbrev
+----------
+
+Rykkerbrevet er også et brev til virksomhed eller myndighed og sendes gennem Fasit. Det bruger en separat Word-skabelon og en konfigurerbar brevtype eller skabelon.
+
+
+11. DIGITALT SIGNERINGSFLOW
+===========================
+
+Oprettelse
+----------
+
+Hvis "Er der givet samtykke?" = "Nej", og state 1.0 ikke findes:
+
+1. Hent borgerbrevets Word-skabelon fra SharePoint.
+2. Udfyld skabelonen med q-word.
+3. Konverter til PDF med q-gotenberg.
+4. Kontrollér om borgeren kan modtage Digital Post.
+5. Opret signeringsopgave med CPR som identifikator og DigitalPost som modtagertype.
+6. Gem flow_id i item.data["box"]["signeringsportal"].
+7. Sæt state 0.5 og 1.0.
+8. Skriv Robotkommentar:
+
+Brev er sendt til borger og afventer digital signering.
+
+9. Defer itemet efter den konfigurerede frist.
+
+Statuskontrol
+-------------
+
+Når itemet genoptages:
+
+1. Hent flow_id fra box.
+2. Kald Signeringsportalens statusfunktion.
+3. Gem den aktuelle status i box.
+
+Mulige statusser omfatter:
+
+- Pending
+- Signed
+- Inactive
+- Expired
+- Deleted
+
+Pending
+-------
+
+Hvis status stadig er Pending:
+
+- Brevet må ikke sendes igen.
+- Itemet deferes igen.
+- En eventuel påmindelse må kun sendes ved Pending og kun med signer_id.
+- sign_flow_id må ikke bruges som signer_id.
+- Hvis påmindelse sendes, sættes state 1.2.
+
+Signed
+------
+
+Hvis status er Signed:
+
+1. Sæt state 1.5.
+2. Opdater SharePoint-feltet "Er der givet samtykke?" til "Digitalt".
+3. Skriv Robotkommentar om ændringen.
+4. Hent den underskrevne PDF som bytes.
+5. Gem filen på SharePoint-itemet som:
+
+Samtykke modtaget digital.pdf
+
+6. Sæt state 1.6.
+7. Skriv Robotkommentar om SharePoint-filen.
+8. Gem PDF i Fasit.
+9. Sæt state 1.7.
+10. Skriv Robotkommentar om, at samtykket er gemt i Fasit.
+11. Fortsæt til myndighedsbrevet.
+
+Afsluttet uden signatur
+-----------------------
+
+Hvis status er Inactive, Expired eller Deleted:
+
+- Skriv Robotkommentar med status.
+- Sæt "Behandles af" til "Sagsbehandler".
+- Robotten må ikke fortsætte til myndighedsbrevet uden gyldigt samtykke.
+
+
+12. MUNDTLIGT/SKRIFTLIGT SAMTYKKE
+==================================
+
+Sagsbehandleren skal:
+
+1. Tage et billede af dokumentationen for samtykket.
+2. Vedhæfte billedet på SharePoint-itemet.
+3. Vælge "Mundtligt/skriftligt" i "Er der givet samtykke?".
+4. Sætte "Behandles af" til "Robot".
+
+Hovedrobotten skal:
+
+1. Kontrollere at mindst én .png-, .jpg- eller .jpeg-fil findes.
+2. Hvis billedet mangler, skrive Robotkommentar og sætte "Behandles af" til "Sagsbehandler".
+3. Hvis billedet findes, bruge billedet som bilag til myndighedsbrevet i Fasit.
+
+Der bruges ikke et felt med "Mundtligt samtykke journal id".
+
+
+13. MYNDIGHEDSBREVET I FASIT
+============================
+
+Når samtykket er dokumenteret:
+
+1. Find borgeren i Fasit via CPR.
+2. Find den relevante sag via sagsnummer.
+3. Hent Word-skabelonen til myndighedsbrevet fra SharePoint.
+4. Udfyld den med q-word.
+5. Konverter den til PDF med q-gotenberg.
+6. Find modparten via P-nummer.
+7. Vedhæft samtykkedokumentet:
+   - digitalt samtykke: Samtykke modtaget digital.pdf
+   - mundtligt/skriftligt samtykke: billedfilen fra SharePoint
+8. Send brevet gennem Fasit.
+9. Opdater brevstatus til "Sendt brev".
+10. Skriv Robotkommentar om afsendelsen.
+11. Sæt state 1.8 og 2.0.
+12. Defer efter den konfigurerede svarfrist.
+
+De nye q-fasit-funktioner skal implementeres af kollegaen. q-fasit skal ikke kende SharePoint, ATS-states, q-word, q-gotenberg eller Signeringsportalen.
+
+
+14. RYKKERFLOW
+==============
+
+Efter den første svarfrist:
+
+Hvis "Modtaget sagsagt?" = "Nej", og state 2.5 ikke findes:
+
+1. Hent rykkerbrevets Word-skabelon fra SharePoint.
+2. Udfyld med q-word.
+3. Konverter til PDF med q-gotenberg.
+4. Send rykkeren gennem Fasit til modparten via P-nummer.
+5. Opdater brevstatus til "Sendt rykkerbrev".
+6. Skriv Robotkommentar.
+7. Sæt state 2.4 og 2.5.
+8. Defer efter den konfigurerede rykkerfrist.
+
+Hvis der fortsat ikke er svar efter rykkeren:
+
+- Robotten skal ikke sende flere rykkere.
+- Robotten skriver Robotkommentar.
+- Robotten sætter "Behandles af" til "Sagsbehandler".
+- Sagsbehandleren beslutter det videre forløb.
+- Robotten fortsætter først, når sagsbehandleren igen sætter "Behandles af" til "Robot".
+
+
+15. MODTAGNE SAGSAKTER
+======================
+
+Når mailrobotten har lagt mindst én .msg-fil på SharePoint-itemet:
+
+- "Modtaget sagsagt?" sættes til "Ja".
+- "Behandles af" sættes til "Robot".
+
+Hovedrobotten skal:
+
+1. Hente alle .msg-attachments fra SharePoint-itemet.
+2. For hver .msg-fil bygge en filspecifik state:
+
+3.0 Sagsakt gemt i Fasit: [filnavn]
+
+3. Hvis state allerede findes, springes filen over.
+4. Hvis state mangler, gemmes .msg-filen i Fasit.
+5. Når Fasit-kaldet er bekræftet, sættes state.
+6. Robotten skriver Robotkommentar:
+
+Den nye fil "[filnavn]" er lagt ind i Fasit.
+
+7. Når alle nye .msg-filer er behandlet, sætter robotten "Behandles af" til "Sagsbehandler".
+8. Robotten skriver, at itemet afventer kontrol og feltet "Slet linjen?".
+
+Der bruges ikke et felt med "Sagsakter journal id".
+
+Sagsbehandleren er ansvarlig for at kontrollere, om alle forventede sagsakter er modtaget, før itemet frigives til sletning.
+
+
+16. AFSLUTNING OG FLERE ITEMS PÅ SAMME SAG
+==========================================
+
+Afslutningssignalet
+-------------------
+
+Robotten må først begynde afslutningen, når sagsbehandleren har sat:
+
+Slet linjen? = Ja
+
+Hvis feltet ikke er Ja:
+
+- Robotten må ikke oprette den afsluttende Fasit-opgave.
+- Robotten må ikke slette SharePoint-itemet.
+- Robotten må ikke complete ATS-itemet endeligt.
+
+Opslag i SharePoint
+-------------------
+
+Når "Slet linjen?" = "Ja":
+
+1. Slå alle SharePoint-items op med samme CPR + Sagsnr.
+2. Opslaget skal ske, før det aktuelle item slettes.
+3. SharePoint bruges som source of truth, ikke ATS, til denne beslutning.
+
+Hvis andre items ikke er klar
+-----------------------------
+
+Hvis der findes andre SharePoint-items med samme CPR + Sagsnr, som ikke er klar til afslutning:
+
+- Opret ikke Fasit-opgave.
+- Skriv eventuelt Robotkommentar om den anden åbne linje.
+- Slet det aktuelle SharePoint-item.
+- Complete det aktuelle ATS-item.
+
+Hvis dette er sidste item
+-------------------------
+
+Hvis ingen andre items med samme CPR + Sagsnr mangler afslutning:
+
+1. Opret én samlet Fasit-opgave til sagsbehandleren.
+2. Opgavetitel og opgavetekst hentes fra configuration.py.
+3. Sæt state 4.0.
+4. Slet det aktuelle SharePoint-item.
+5. Complete det aktuelle ATS-item.
+
+Korrekt rækkefølge
+------------------
+
+1. Kontrollér "Slet linjen?".
+2. Slå andre items op i SharePoint.
+3. Opret eventuelt afsluttende Fasit-opgave.
+4. Slet aktuelt SharePoint-item.
+5. Complete aktuelt ATS-item.
+
+SharePoint-sletning er altid det sidste forretningstrin før ATS-completion.
+
+
+17. FASIT-FUNKTIONER DER SKAL LEVERES
+=====================================
+
+Kollegaen skal udvide q-fasit med genbrugelige funktioner til mindst:
+
+1. Opslag af virksomhed eller myndighed via P-nummer.
+2. Afsendelse af myndighedsbrev med bilag.
+3. Afsendelse af rykkerbrev, gerne via samme generelle funktion med en anden brevtype.
+4. Gem dokument på en bestemt Fasit-sag.
+5. Gem digitalt samtykke i Fasit.
+6. Gem .msg-filer i Fasit, hvis Fasit teknisk understøtter formatet.
+7. Hent eller bekræft forsendelsesstatus, hvis et relevant endpoint findes.
+8. Hent nødvendige id'er til den afsluttende opgave, hvis de ikke allerede findes gennem de eksisterende funktioner.
+
+Den eksisterende opgavefunktion i q-fasit kan anvendes til den afsluttende borgeropgave, hvis de nødvendige id'er kan skaffes.
+
+Funktionerne skal:
+
+- være asynkrone i samme stil som q-fasit
+- bruge FasitApiClient
+- validere input
+- returnere stabile id'er og status
+- efterkontrollere oprettelser hvor muligt
+- advare om mulig dublet, hvis create lykkes, men efterkontrol fejler
+- aldrig logge CPR, dokumentbytes, Base64, tokens eller credentials
+- ikke indeholde proceslogik eller SharePoint-opdateringer
+
+
+18. CONFIGURATION.PY
+====================
+
+configuration.py skal ligge i repositoryets rod.
+
+Den må indeholde værdier, der kan ændres uden at ændre proceslogikken, blandt andet:
+
+- SharePoint-site
+- SharePoint-listenavn
+- dokumentbibliotek
+- skabelonmappe
+- navnene på Word-skabelonerne
+- genererede dokumentnavne
+- forventede Word-pladsholdere
+- signeringsflow-navn
+- besked til borgeren
+- udløbs- og deferdage
+- Fasit credential-navn
+- Fasit brevtyper
+- Fasit dokumentkategori
+- Fasit opgavekategori
+- Fasit opgavetitel og opgavetekst
+- svarfrist og rykkerfrist
+- tilladte filendelser
+- SharePoint-feltnavne og dropdownværdier
+- mailboksadresse til mailrobotten
+
+configuration.py må ikke indeholde:
+
+- ATS-states
+- proceslogik
+- OAuth secrets
+- bearer-tokens
+- Gotenberg-URL
+- Signeringsportalens client secret
+
+
+19. CREDENTIALS OG SIKKERHED
+============================
+
+Følgende credentials forventes i Automation Server:
+
+API_SHAREPOINT
+--------------
+
+Bruges af q-sharepoint-api.
+
+API_GOTENBERG
+-------------
+
+Data JSON indeholder base_url og eventuelt timeout_seconds.
+
+API_SIGNERINGSPORTALEN
+---------------------
+
+Data JSON indeholder client_id.
+Passwordfeltet indeholder client_secret.
+
+Fasit-credential
+----------------
+
+Det konfigurerede Fasit-credential-navn anvendes af FasitTokenManager.
+
+Secrets må aldrig hardkodes i repository, README, tests eller committed .env.
+
+
+20. REPOSITORYSTRUKTUR
+======================
+
+Procesrepositoryet skal følge den flade processkabelon.
+
+Alle procesfiler og testfiler ligger i roden. Der må ikke oprettes undermapper til integrationskode, dokumentation eller tests.
+
+Planlagte filer i roden:
+
+- .env
+- README.md
+- configuration.py
+- main.py
+- behandel.py
+- queue_producer.py
+- models.py
+- document_service.py
+- sharepoint_gateway.py
+- signing_gateway.py
+- fasit_contract.py eller senere fasit_gateway.py
+- mailrobot.py, når mailintegrationen implementeres
+- template_test.py
+- test_document_service.py
+- yderligere test_*.py-filer
+- krav_til_q_fasit.md
+- denne procesdokumentation som doc.txt
+
+main.py
+-------
+
+main.py ejer:
+
+- procesparametrene --queue og --debug
+- Automation Server-initialisering
+- køens livscyklus
+- browserens livscyklus
+- overordnet fejlbehandling
+
+main.py skal være kort og må ikke indeholde lang forretningslogik.
+
+behandel.py
+-----------
+
+behandel.py ejer:
+
+- States-klassen
+- procestrin
+- statekontrol
+- samtykkeflow
+- signeringsflow
+- myndighedsbrev
+- rykker
+- sagsakter
+- afslutning
+
+.env
+----
+
+.env skal mindst indeholde:
+
+ATS_URL=http://robot01:8000
+ATS_TOKEN=
+ATS_WORKQUEUE_OVERRIDE=
+
+Lokale debugværdier som HEADLESS og DEBUG_ITEM_REFERENCE kan tilføjes.
+
+
+21. TESTSTRATEGI
+================
+
+Fase 1: Ren kode og enhedstest
+------------------------------
+
+- Test dansk datoformat.
+- Test validering af Word-pladsholdere.
+- Test klassifikation af billeder, PDF og .msg.
+- Test mailens id-udtræk fra de første 5 tegn.
+- Test unikke .msg-filnavne.
+- Test statekontrol.
+- Test afslutningslogik med flere items.
+- Mock SharePoint, Signeringsportal og Fasit.
+
+Fase 2: Word-skabeloner og Gotenberg
+------------------------------------
+
+- Placér Word-skabeloner på SharePoint.
+- Hent hver skabelon som bytes.
+- Udfyld alle pladsholdere.
+- Konverter til PDF.
+- Kontrollér dokumentets indhold og formatering manuelt.
+
+Fase 3: SharePoint
+------------------
+
+- Test hentning af listeitems.
+- Test opdatering af felter.
+- Test append af Robotkommentar.
+- Test hentning af billedattachments.
+- Test upload af digitalt samtykke.
+- Test hentning af .msg-attachments.
+- Test sletning af item med dedikerede testdata.
+
+Fase 4: Queue
+-------------
+
+- Opret testitems i SharePoint.
+- Kør producer med --queue.
+- Kontrollér reference og box.sharepoint.
+- Test at eksisterende item ikke dubleres.
+- Test ajourføring med nye SharePoint-værdier.
+
+Fase 5: Signeringsportalen
+--------------------------
+
+- Test Digital Post-kontrol.
+- Test oprettelse af signeringsflow.
+- Kontrollér at flow_id gemmes i box.
+- Test Pending.
+- Test Signed.
+- Test hentning og upload af underskrevet PDF.
+- Test udløbet/afsluttet uden signatur.
+- Test påmindelse med signer_id.
+
+Fase 6: Fasit
+-------------
+
+- Test opslag af borger og sag.
+- Test opslag via P-nummer.
+- Test myndighedsbrev med digitalt samtykke.
+- Test myndighedsbrev med billedsamtykke.
+- Test rykkerbrev.
+- Test gem af underskrevet PDF.
+- Test gem af .msg eller dokumentér teknisk begrænsning.
+- Test afsluttende opgave.
+
+Fase 7: End-to-end og genstart
+------------------------------
+
+Afbryd processen efter hvert state og genstart.
+Bekræft at processen ikke:
+
+- genererer samme dokument unødigt
+- sender samme borgerbrev igen
+- sender samme myndighedsbrev igen
+- sender samme rykker igen
+- gemmer samme .msg igen
+- opretter samme afsluttende opgave igen
+
+
+22. KENDTE ÅBNE PUNKTER
+=======================
+
+Følgende skal stadig fastlægges eller testes:
+
+- Det endelige SharePoint-listenavn.
+- Den endelige dokumentbibliotekssti og skabelonmappe.
+- Word-skabelonernes præcise pladsholdere.
+- Mailrobotpostkassens adresse og adgangsmetode.
+- Den konkrete mailfunktion til eksport som .msg.
+- De endelige q-fasit-funktionsnavne og endpoints.
+- Om Fasit accepterer .msg direkte.
+- Fasit brevtype for myndighedsbrev og rykkerbrev.
+- Fasit dokumentkategori.
+- Hvordan responsible_case_worker_id og responsible_team_id findes stabilt.
+- Fasit opgavekategori-id og sagstype.
+- Den præcise defer-funktion og status efter hvert ventetrin i processkabelonen.
+- Den konkrete q-sharepoint-api-funktion til sletning af listeitem.
+- Endelig fejlhåndtering for ugyldigt mail-id.
+- Om en signeringspåmindelse skal sendes, og præcis hvornår.
+- Om Signeringsportal-flowet skal slettes efter fuldført journalisering.
+
+Åbne punkter må ikke gættes i produktionskoden. De skal afklares eller testes.
+
+
+23. BESLUTNINGER DER IKKE MÅ GLEMMES
+====================================
+
+- SharePoint er source of truth for CPR + Sagsnr og sidste-item-kontrollen.
+- ATS bruges til kø, box, states og defer.
+- States ligger i behandel.py, ikke configuration.py.
+- Alle proces- og testfiler ligger i repositoryets rod.
+- Mundtligt/skriftligt samtykke dokumenteres med et billede på SharePoint-itemet.
+- Digitalt samtykke gemmes som "Samtykke modtaget digital.pdf".
+- Borgerbrevet sendes gennem Signeringsportalen, ikke Fasit.
+- Myndighedsbrevet og rykkeren sendes gennem Fasit.
+- Samtykkedokumentet vedhæftes myndighedsbrevet.
+- P-nummer bruges til at finde modparten.
+- Mailrobotten skriver ikke Robotkommentar.
+- Mailrobotten sætter "Modtaget sagsagt?" = Ja og "Behandles af" = Robot.
+- Hovedrobotten skriver Robotkommentar, når .msg-filen er gemt i Fasit.
+- Hver .msg-fil har sin egen ATS-state med filnavnet.
+- Efter én rykker gør robotten ikke mere uden sagsbehandlerens handling.
+- "Slet linjen?" styres kun af sagsbehandleren.
+- Robotten må først oprette afsluttende opgave, slette SharePoint-item og complete ATS-item, når "Slet linjen?" = Ja.
+- Den afsluttende opgave oprettes kun af det sidste item på samme CPR + Sagsnr.
+- Opslaget efter andre linjer sker før det aktuelle SharePoint-item slettes.
+- SharePoint-itemet slettes før ATS-itemet completes.
+- Værdier, der kan justeres, ligger i configuration.py.
+- Secrets og serviceadresser fra credentials hardkodes ikke.
+
+
+24. VEDLIGEHOLDELSE AF DETTE DOKUMENT
+=====================================
+
+Når der træffes en ny procesbeslutning, skal dette dokument opdateres samtidig med koden.
+
+Ved ændringer bør følgende altid ajourføres:
+
+- Beslutningsafsnittet.
+- SharePoint-felter og dropdownværdier.
+- States.
+- Configuration-værdier.
+- Integrationskontrakter.
+- Testplan.
+- Kendte åbne punkter.
+
+Dokumentet er proceshukommelsen, men den aktuelle kode og de aktuelle repository-filer skal altid genlæses før konkrete kodeændringer.
