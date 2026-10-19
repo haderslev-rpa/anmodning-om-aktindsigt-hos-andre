@@ -19,8 +19,8 @@ q-haderslev-vbo = { git = "https://github.com/haderslev-rpa/q-haderslev-vbo.git"
 q-sharepoint-api = { git = "https://github.com/haderslev-rpa/q-sharepoint-api.git", branch = "main" }
 q-word = { git = "https://github.com/haderslev-rpa/q-word.git", branch = "main" }
 q-gotenberg = { git = "https://github.com/haderslev-rpa/q-gotenberg.git", branch = "main" }
-q-signeringsportalen-api = { git = "INDSAET_REPOSITORY_URL", branch = "main" }
-q-fasit = { git = "https://github.com/haderslev-rpa/q-fasit.git", branch = "main" }
+q-signeringsportalen-api = { git = "https://github.com/haderslev-rpa/q-signeringsportalen-api.git", branch = "main" }
+q-fasit = { git = "https://github.com/haderslev-rpa/q-fasit.git", branch = "master" }
 
 [dependency-groups]
 dev = ["pytest>=8.0"]
