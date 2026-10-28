@@ -4,6 +4,7 @@ import os
 import sys
 from automation_server_client import AutomationServer, WorkItemError, WorkItemStatus, Workqueue
 from behandel import behandel_page
+from mailrobot import run_mailrobot
 from queue_producer import populate_queue
 from q_haderslev_vbo.playwright.browser_session import BrowserSession
 
@@ -27,7 +28,6 @@ def _vaelg_items_til_behandling(workqueue: Workqueue):
     return [items[0]]
 
 async def process_workqueue(workqueue: Workqueue, debug: bool):
-    logger.info("Process workqueue mode started (debug=%s)", debug)
     session = BrowserSession(headless=get_headless_flag(), debug=debug)
     await session.start()
     page = await session.new_page()
@@ -51,9 +51,13 @@ async def process_workqueue(workqueue: Workqueue, debug: bool):
 if __name__ == "__main__":
     debug = "--debug" in sys.argv
     queue_mode = "--queue" in sys.argv
+    mail_mode = "--mail" in sys.argv
     automation_server = AutomationServer.from_environment()
-    workqueue = automation_server.workqueue()
-    if queue_mode:
-        asyncio.run(populate_queue(workqueue=workqueue, debug=debug))
+    if mail_mode:
+        print(f"Behandlede mails: {run_mailrobot()}")
     else:
-        asyncio.run(process_workqueue(workqueue=workqueue, debug=debug))
+        workqueue = automation_server.workqueue()
+        if queue_mode:
+            asyncio.run(populate_queue(workqueue=workqueue, debug=debug))
+        else:
+            asyncio.run(process_workqueue(workqueue=workqueue, debug=debug))
