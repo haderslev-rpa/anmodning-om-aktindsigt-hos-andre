@@ -330,3 +330,4 @@ def _is_closed_case(case: dict[str, Any]) -> bool:
         closed_status.casefold() in status
         for closed_status in cfg.FASIT_CLOSED_CASE_STATUSES
     )
+

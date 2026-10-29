@@ -9,3 +9,4 @@ Alle procesfiler og testfiler ligger i repositoryets rod. Strukturen følger pro
 - `python main.py --debug` kører worker-delen i debugtilstand.
 - `pytest` finder `test_*.py` direkte i roden.
 - `python template_test.py` tester Word-skabelonen fra SharePoint og PDF-konverteringen.
+

@@ -12,7 +12,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import configuration as cfg
-from q_outlook_api.functionality.mail_api import delete_mail, get_mails
+from q_outlook_api.functionality.mail_api import delete_mail, download_mail, get_mails
 from q_sharepoint_api.functionality.sp_list_attachments import add_attachment_to_item
 from q_sharepoint_api.functionality.sp_list_item_save import save_list_item
 from q_sharepoint_api.functionality.sp_list_items import get_list_items
@@ -39,19 +39,6 @@ def _safe_subject(subject: str) -> str:
     return value[:80] or "mail"
 
 
-def _mail_as_text(message: dict) -> bytes:
-    """Gem de mailoplysninger, som q-outlook-api offentligt returnerer."""
-    lines = [
-        f"Emne: {message.get('subject') or ''}",
-        f"Fra: {message.get('sender_address') or ''}",
-        f"Modtaget: {message.get('received_datetime_danish') or ''}",
-        f"Internet-Message-ID: {message.get('internet_message_id') or ''}",
-        "",
-        str(message.get("body") or ""),
-    ]
-    return "\n".join(lines).encode("utf-8")
-
-
 def _assert_sharepoint_item_exists(item_id: str) -> None:
     """Stop tydeligt, hvis mailen peger på et ukendt SharePoint-item."""
     result = get_list_items(
@@ -66,16 +53,33 @@ def _assert_sharepoint_item_exists(item_id: str) -> None:
         )
 
 
-def _upload_mail_text(item_id: str, message: dict) -> str:
-    """Upload mailens offentligt tilgængelige data som tekstfil."""
+def _download_and_upload_mail(item_id: str, message: dict) -> str:
+    """Hent hele mailen som EML og upload den på SharePoint-itemet."""
+    message_id = str(message.get("message_id") or message.get("id") or "").strip()
+    if not message_id:
+        raise ValueError("Mailen mangler message_id fra q-outlook-api.")
+
+    downloaded = download_mail(
+        user_mail=cfg.MAILBOX_ADDRESS,
+        message_id=message_id,
+    )
+    if not downloaded.get("exists"):
+        raise LookupError(f"Mailen findes ikke længere i Outlook: {message_id}")
+
+    content = downloaded.get("content_bytes")
+    if not isinstance(content, bytes) or not content:
+        raise ValueError("download_mail returnerede ikke gyldige mail-bytes.")
+
     timestamp = datetime.now(ZoneInfo("Europe/Copenhagen")).strftime(
         "%Y%m%d_%H%M%S"
     )
-    file_name = f"{timestamp}_{_safe_subject(message.get('subject'))}.txt"
+    file_name = f"{timestamp}_{_safe_subject(message.get('subject'))}.eml"
 
+    # q-sharepoint-api modtager aktuelt file_path ved listevedhæftninger.
+    # Tempfilen findes kun under upload og slettes straks derefter.
     with TemporaryDirectory() as folder:
         path = Path(folder) / file_name
-        path.write_bytes(_mail_as_text(message))
+        path.write_bytes(content)
         add_attachment_to_item(
             site_name=cfg.SHAREPOINT_SITE_NAME,
             list_name=cfg.SHAREPOINT_LIST_NAME,
@@ -84,8 +88,6 @@ def _upload_mail_text(item_id: str, message: dict) -> str:
         )
 
     return file_name
-
-
 def _update_sharepoint_item(item_id: str) -> None:
     """Sæt SharePoint-itemet tilbage til robotbehandling."""
     save_list_item(
@@ -117,7 +119,7 @@ def run_mailrobot() -> int:
     for message in messages:
         item_id = extract_sharepoint_id(message.get("body") or "")
         _assert_sharepoint_item_exists(item_id)
-        _upload_mail_text(item_id, message)
+        _download_and_upload_mail(item_id, message)
         _update_sharepoint_item(item_id)
 
         if cfg.MAIL_DELETE_AFTER_SUCCESS:
@@ -134,3 +136,4 @@ def run_mailrobot() -> int:
 
 if __name__ == "__main__":
     print(f"Behandlede mails: {run_mailrobot()}")
+

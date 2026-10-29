@@ -39,3 +39,4 @@ class SigningGateway:
     def delete(self, flow_id: str) -> None:
         with SigneringsportalClient.from_automation_server() as client:
             client.slet_signeringsopgave(flow_id)
+

@@ -48,6 +48,8 @@ SIGNING_STATUS_CHECK_DAYS = 7
 SIGNING_REMINDER_AFTER_DAYS = 7
 
 # Fasit
+# False springer alle Fasit-opslag, dokumenter og opgaver helt over.
+FASIT_ENABLED = False
 FASIT_CREDENTIAL_NAME = "DIRXOPS"
 FASIT_MYNDIGHEDSBREV_TYPE = "INDSAET_BREVTYPE"
 FASIT_RYKKERBREV_TYPE = "INDSAET_BREVTYPE"
@@ -68,7 +70,7 @@ AUTHORITY_REMINDER_RESPONSE_DAYS = 7
 
 # Vedhæftninger
 CONSENT_IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg")
-CASE_FILE_EXTENSIONS = (".msg",)
+CASE_FILE_EXTENSIONS = (".eml",)
 TEMP_FOLDER = "/tmp/anmod_om_aktindsigt_hos_andre"
 
 # SharePoint-feltnavne
@@ -93,3 +95,4 @@ VALUE_CONSENT_DIGITAL = "Digitalt"
 VALUE_LETTER_NOT_SENT = "Ikke sendt"
 VALUE_LETTER_SENT = "Sendt brev"
 VALUE_REMINDER_SENT = "Sendt rykkerbrev"
+

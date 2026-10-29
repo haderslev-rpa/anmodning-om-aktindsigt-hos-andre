@@ -31,3 +31,4 @@ def test_template_values_blanks_flexjob_for_other_case_type():
 
     assert values["SAGSTYPE"] == "Sygedagpenge"
     assert values["FLEKSJOB"] == ""
+

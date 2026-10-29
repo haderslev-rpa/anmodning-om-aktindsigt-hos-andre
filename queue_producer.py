@@ -32,3 +32,4 @@ async def populate_queue(workqueue, debug: bool) -> None:
             update=False,
         )
         workqueue.add_item(data=data, reference=reference)
+

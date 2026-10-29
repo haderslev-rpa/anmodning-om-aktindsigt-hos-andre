@@ -23,3 +23,4 @@ def create_docx_and_pdf(*, template_bytes, values, required_fields, docx_file_na
 def image_to_pdf(image_file: BinaryFile, pdf_file_name: str) -> BinaryFile:
     pdf=konverter_fil_til_pdf(filnavn=image_file.file_name, filindhold=image_file.content)
     return BinaryFile(pdf_file_name,pdf,"application/pdf")
+

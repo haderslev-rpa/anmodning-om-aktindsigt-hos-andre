@@ -637,7 +637,7 @@ dependencies = [
 [[package]]
 name = "q-outlook-api"
 version = "0.1.0"
-source = { git = "https://github.com/haderslev-rpa/q-outlook-api.git?branch=main#9ffdaf38565d5fc7eeebdbc2399effa69eb9e6b9" }
+source = { git = "https://github.com/haderslev-rpa/q-outlook-api.git?branch=main#ee0193429bc210cd96d5993b400e49ce855eb420" }
 dependencies = [
     { name = "automation-server-client" },
     { name = "requests" },

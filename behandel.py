@@ -102,8 +102,13 @@ async def behandel_page(item, session, page):
             sharepoint.add_list_attachment(item_id=int(item_id), document=signed_pdf)
             set_state(data, item, States.DIGITALT_SAMTYKKE_GEMT_SHAREPOINT)
             robotkommentar(item, f'Det underskrevne samtykke er gemt på SharePoint-itemet med navnet "{signed_pdf.file_name}".')
-            data["box"]["documents_pending_fasit"] = [signed_pdf.file_name]
+            if cfg.FASIT_ENABLED:
+                data["box"]["documents_pending_fasit"] = [signed_pdf.file_name]
             update_item_data(data, item=item)
             return
 
-    logger.info("Itemet er klar til næste procesdel eller afventer q-fasit-koblingen.")
+    if cfg.FASIT_ENABLED:
+        logger.info("Itemet er klar til næste procesdel eller afventer q-fasit-koblingen.")
+    else:
+        logger.info("Fasit er slået fra. Processen fortsætter uden Fasit-opslag og Fasit-sideeffekter.")
+

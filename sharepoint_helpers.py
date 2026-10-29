@@ -75,3 +75,4 @@ def add_list_attachment(item_id: str | int, document: BinaryFile) -> dict:
             item_id=item_id,
             file_path=str(local_path),
         )
+

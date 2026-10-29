@@ -26,3 +26,4 @@ class DigitalPostGateway:
             "reason": result.reason,
             "message": result.message,
         }
+

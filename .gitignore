@@ -5,3 +5,4 @@ __pycache__/
 .vscode/
 debug_playwright/
 tests_local*/
+
