@@ -11,6 +11,7 @@ dependencies = [
   "q-gotenberg-api",
   "q-signeringsportalen-api",
   "q-fasit",
+  "q-outlook-api",
 ]
 
 [tool.uv.sources]
@@ -21,6 +22,7 @@ q-word = { git = "https://github.com/haderslev-rpa/q-word.git", branch = "main" 
 q-gotenberg-api = { git = "https://github.com/haderslev-rpa/q-gotenberg-api.git", branch = "main" }
 q-signeringsportalen-api = { git = "https://github.com/haderslev-rpa/q-signeringsportalen-api.git", branch = "main" }
 q-fasit = { git = "https://github.com/haderslev-rpa/q-fasit.git", branch = "master" }
+q-outlook-api = { git = "https://github.com/haderslev-rpa/q-outlook-api.git", branch = "main" }
 
 [dependency-groups]
 dev = ["pytest>=8.0"]

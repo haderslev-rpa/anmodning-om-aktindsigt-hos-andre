@@ -3,7 +3,12 @@ from datetime import date
 import logging
 import configuration as cfg
 from document_service import create_docx_and_pdf, dansk_dato
-from sharepoint_gateway import SharePointGateway
+from sharepoint_helpers import (
+    add_list_attachment,
+    download_list_attachment,
+    get_template,
+    list_item_attachments,
+)
 from signing_gateway import SigningGateway
 from q_haderslev_vbo.automation_server.ats_update_item_data import update_item_data
 from q_haderslev_vbo.automation_server.ats_sharepoint import gem_sharepoint_list_item_til_box, hent_sharepoint_list_item_til_box

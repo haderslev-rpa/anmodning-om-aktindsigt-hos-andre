@@ -1,73 +1,136 @@
-"""Mailrobot via Microsoft Graph.
+"""Modtag svarmails via q-outlook-api og gem dem på SharePoint.
 
-Graph eksporterer mailen som MIME. Derfor gemmes testmailen som .eml, ikke som en
-falsk .msg-fil. Både .eml og .msg accepteres senere som sagsaktfiler.
+Filen indeholder ingen egne Microsoft Graph-kald og henter ingen credentials.
+Outlook håndteres af q-outlook-api, og SharePoint håndteres af q-sharepoint-api.
 """
-from datetime import datetime
-from html import unescape
-import re
-from zoneinfo import ZoneInfo
-import requests
-import configuration as cfg
-from models import BinaryFile
-from q_sharepoint_api.sp_api import get_client
-from sharepoint_gateway import SharePointGateway
+from __future__ import annotations
 
-GRAPH_ROOT = "https://graph.microsoft.com/v1.0"
+from datetime import datetime
+import re
+from tempfile import TemporaryDirectory
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+import configuration as cfg
+from q_outlook_api.functionality.mail_api import delete_mail, get_mails
+from q_sharepoint_api.functionality.sp_list_attachments import add_attachment_to_item
+from q_sharepoint_api.functionality.sp_list_item_save import save_list_item
+from q_sharepoint_api.functionality.sp_list_items import get_list_items
+
 
 def extract_sharepoint_id(body_text: str) -> str:
-    prefix = (body_text or "")[:cfg.MAIL_ID_PREFIX_LENGTH]
+    """Læs SharePoint-id blandt de første konfigurerede tegn i mailteksten."""
+    prefix = str(body_text or "")[: cfg.MAIL_ID_PREFIX_LENGTH]
     digits = "".join(character for character in prefix if character.isdigit())
     if not digits:
-        raise ValueError("De første 5 tegn i mailteksten indeholder ikke et SharePoint-id.")
+        raise ValueError(
+            "Mailens begyndelse indeholder ikke et gyldigt SharePoint-id."
+        )
     return digits
 
-def _plain_text(body: dict) -> str:
-    content = unescape(str(body.get("content") or ""))
-    return re.sub(r"<[^>]+>", "", content).strip()
 
 def _safe_subject(subject: str) -> str:
-    value = re.sub(r"[^A-Za-z0-9ÆØÅæøå_-]+", "_", subject or "mail").strip("_")
+    """Lav et sikkert og læsbart filnavn fra mailens emne."""
+    value = re.sub(
+        r"[^A-Za-z0-9ÆØÅæøå_-]+",
+        "_",
+        str(subject or "mail"),
+    ).strip("_")
     return value[:80] or "mail"
 
+
+def _mail_as_text(message: dict) -> bytes:
+    """Gem de mailoplysninger, som q-outlook-api offentligt returnerer."""
+    lines = [
+        f"Emne: {message.get('subject') or ''}",
+        f"Fra: {message.get('sender_address') or ''}",
+        f"Modtaget: {message.get('received_datetime_danish') or ''}",
+        f"Internet-Message-ID: {message.get('internet_message_id') or ''}",
+        "",
+        str(message.get("body") or ""),
+    ]
+    return "\n".join(lines).encode("utf-8")
+
+
+def _assert_sharepoint_item_exists(item_id: str) -> None:
+    """Stop tydeligt, hvis mailen peger på et ukendt SharePoint-item."""
+    result = get_list_items(
+        site_name=cfg.SHAREPOINT_SITE_NAME,
+        list_name=cfg.SHAREPOINT_LIST_NAME,
+        item_id=item_id,
+    )
+    if result.get("count") != 1:
+        raise LookupError(
+            f"Forventede ét SharePoint-item med id {item_id}, "
+            f"men fandt {result.get('count', 0)}."
+        )
+
+
+def _upload_mail_text(item_id: str, message: dict) -> str:
+    """Upload mailens offentligt tilgængelige data som tekstfil."""
+    timestamp = datetime.now(ZoneInfo("Europe/Copenhagen")).strftime(
+        "%Y%m%d_%H%M%S"
+    )
+    file_name = f"{timestamp}_{_safe_subject(message.get('subject'))}.txt"
+
+    with TemporaryDirectory() as folder:
+        path = Path(folder) / file_name
+        path.write_bytes(_mail_as_text(message))
+        add_attachment_to_item(
+            site_name=cfg.SHAREPOINT_SITE_NAME,
+            list_name=cfg.SHAREPOINT_LIST_NAME,
+            item_id=item_id,
+            file_path=str(path),
+        )
+
+    return file_name
+
+
+def _update_sharepoint_item(item_id: str) -> None:
+    """Sæt SharePoint-itemet tilbage til robotbehandling."""
+    save_list_item(
+        site_name=cfg.SHAREPOINT_SITE_NAME,
+        list_name=cfg.SHAREPOINT_LIST_NAME,
+        data={
+            "id": item_id,
+            cfg.FIELD_CASE_FILE_RECEIVED: cfg.VALUE_YES,
+            cfg.FIELD_HANDLED_BY: cfg.VALUE_ROBOT,
+        },
+    )
+
+
 def run_mailrobot() -> int:
+    """Behandl mails i indbakken og returnér antal færdige mails."""
     if not cfg.MAIL_ROBOT_ENABLED:
         print("Mailrobotten er slået fra i configuration.py.")
         return 0
-    client = get_client()
-    headers = client.auth.graph_headers()
-    url = f"{GRAPH_ROOT}/users/{cfg.MAILBOX_ADDRESS}/mailFolders/inbox/messages?$top={cfg.MAIL_TOP}"
-    response = requests.get(url, headers=headers, timeout=30)
-    response.raise_for_status()
-    gateway = SharePointGateway()
+
+    messages = get_mails(
+        user_mail=cfg.MAILBOX_ADDRESS,
+        folder="inbox",
+        limit=cfg.MAIL_TOP,
+        include_attachments=False,
+        prefer_plain_text=True,
+    )
+
     processed = 0
-    for message in response.json().get("value", []):
-        item_id = extract_sharepoint_id(_plain_text(message.get("body") or {}))
-        gateway.get_item(item_id)
-        message_id = message["id"]
-        mime_response = requests.get(
-            f"{GRAPH_ROOT}/users/{cfg.MAILBOX_ADDRESS}/messages/{message_id}/$value",
-            headers=headers,
-            timeout=60,
-        )
-        mime_response.raise_for_status()
-        timestamp = datetime.now(ZoneInfo("Europe/Copenhagen")).strftime("%Y%m%d_%H%M%S")
-        file_name = f"{timestamp}_{_safe_subject(message.get('subject', 'mail'))}{cfg.MAIL_FILE_EXTENSION}"
-        gateway.add_attachment(item_id, BinaryFile(file_name, mime_response.content, "message/rfc822"))
-        gateway.update_item(item_id, {
-            cfg.FIELD_CASE_FILE_RECEIVED: cfg.VALUE_YES,
-            cfg.FIELD_HANDLED_BY: cfg.VALUE_ROBOT,
-        })
+    for message in messages:
+        item_id = extract_sharepoint_id(message.get("body") or "")
+        _assert_sharepoint_item_exists(item_id)
+        _upload_mail_text(item_id, message)
+        _update_sharepoint_item(item_id)
+
         if cfg.MAIL_DELETE_AFTER_SUCCESS:
-            delete_response = requests.delete(
-                f"{GRAPH_ROOT}/users/{cfg.MAILBOX_ADDRESS}/messages/{message_id}",
-                headers=headers,
-                timeout=30,
+            delete_mail(
+                user_mail=cfg.MAILBOX_ADDRESS,
+                message_id=message["message_id"],
+                permanent_delete=False,
             )
-            if delete_response.status_code not in {200, 202, 204}:
-                delete_response.raise_for_status()
+
         processed += 1
+
     return processed
+
 
 if __name__ == "__main__":
     print(f"Behandlede mails: {run_mailrobot()}")
