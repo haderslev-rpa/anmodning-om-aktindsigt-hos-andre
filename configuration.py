@@ -1,3 +1,12 @@
+"""
+Konfiguration for processen Anmod om aktindsigt hos andre.
+
+Filen indeholder kun værdier, som kan ændres uden at ændre
+proceslogikken.
+
+Secrets og interne serviceadresser ligger i Automation Server.
+"""
+
 
 # ------------------------------------------------------------
 # SHAREPOINT
@@ -9,12 +18,9 @@ SHAREPOINT_LIST_NAME = (
     "Anmodning om aktindsigt hos andre"
 )
 
-# Stien er relativ til SharePoint-sitets standarddrev.
-# Bibliotekets viste navn "Delte dokumenter" skal derfor ikke
-# være en separat indstilling.
 SHAREPOINT_TEMPLATE_FOLDER = (
     "RPA - Processer/"
-    "Anmod om aktindsigt hos andre/"
+    "anmodning-om-aktindsigt-hos-andre/"
     "Skabeloner"
 )
 
@@ -32,7 +38,7 @@ RYKKERBREV_TEMPLATE_FILE_NAME = (
 
 
 # ------------------------------------------------------------
-# GENEREREDE DOKUMENTNAVNE
+# GENEREREDE DOKUMENTER
 # ------------------------------------------------------------
 
 BORGERBREV_DOCX_FILE_NAME = (
@@ -41,10 +47,6 @@ BORGERBREV_DOCX_FILE_NAME = (
 
 BORGERBREV_PDF_FILE_NAME = (
     "Samtykke til borger.pdf"
-)
-
-DIGITAL_CONSENT_FILE_NAME = (
-    "Samtykke modtaget digital.pdf"
 )
 
 MYNDIGHEDSBREV_DOCX_FILE_NAME = (
@@ -61,6 +63,54 @@ RYKKERBREV_DOCX_FILE_NAME = (
 
 RYKKERBREV_PDF_FILE_NAME = (
     "Rykker om aktindsigt.pdf"
+)
+
+
+# ------------------------------------------------------------
+# SHAREPOINT-VEDHÆFTNINGER
+# ------------------------------------------------------------
+
+UNSIGNED_CONSENT_FILE_NAME = (
+    "Sendt til signering hos borger - ikke signeret.pdf"
+)
+
+SIGNED_CONSENT_FILE_NAME = (
+    "Samtykke fra borger - signeret.pdf"
+)
+
+AUTHORITY_CONSENT_ATTACHMENT_FILE_NAME = (
+    "Samtykke fra borger.pdf"
+)
+
+ARCHIVED_AUTHORITY_LETTER_FILE_NAME = (
+    "Afsendt anmodning om aktindsigt.pdf"
+)
+
+REGENERATED_AUTHORITY_LETTER_FILE_NAME = (
+    "Regenereret anmodning om aktindsigt.pdf"
+)
+
+ARCHIVED_REMINDER_FILE_NAME = (
+    "Afsendt rykker om aktindsigt.pdf"
+)
+
+REGENERATED_REMINDER_FILE_NAME = (
+    "Regenereret rykker om aktindsigt.pdf"
+)
+
+CONSENT_IMAGE_EXTENSIONS = (
+    ".bmp",
+    ".gif",
+    ".jpeg",
+    ".jpg",
+    ".png",
+    ".tif",
+    ".tiff",
+    ".webp",
+)
+
+CASE_FILE_EXTENSIONS = (
+    ".eml",
 )
 
 
@@ -106,15 +156,20 @@ SIGNING_MESSAGE = (
 )
 
 SIGNING_EXPIRY_DAYS = 14
-SIGNING_STATUS_CHECK_DAYS = 7
-SIGNING_REMINDER_AFTER_DAYS = 7
+
+
+# ------------------------------------------------------------
+# FRISTER
+# ------------------------------------------------------------
+
+AUTHORITY_RESPONSE_DAYS = 7
+AUTHORITY_REMINDER_RESPONSE_DAYS = 7
 
 
 # ------------------------------------------------------------
 # FASIT
 # ------------------------------------------------------------
 
-# False springer alle Fasit-opslag, dokumenter og opgaver over.
 FASIT_ENABLED = False
 
 FASIT_CREDENTIAL_NAME = "DIRXOPS"
@@ -135,33 +190,6 @@ FASIT_TASK_DUE_DAYS = 0
 
 
 # ------------------------------------------------------------
-# FRISTER
-# ------------------------------------------------------------
-
-AUTHORITY_RESPONSE_DAYS = 7
-AUTHORITY_REMINDER_RESPONSE_DAYS = 7
-
-
-# ------------------------------------------------------------
-# VEDHÆFTNINGER
-# ------------------------------------------------------------
-
-CONSENT_IMAGE_EXTENSIONS = (
-    ".png",
-    ".jpg",
-    ".jpeg",
-)
-
-CASE_FILE_EXTENSIONS = (
-    ".eml",
-)
-
-TEMP_FOLDER = (
-    "/tmp/anmod_om_aktindsigt_hos_andre"
-)
-
-
-# ------------------------------------------------------------
 # SHAREPOINT-FELTNAVNE
 # ------------------------------------------------------------
 
@@ -172,7 +200,6 @@ FIELD_P_NUMBER = "P-nummer"
 FIELD_INSTITUTION = "Institutionsnavn"
 FIELD_CONSENT = "Er der givet samtykke?"
 
-# Disse navne matcher felterne i dit viste SharePoint-item.
 FIELD_LETTER_STATUS = (
     "Brevstatus til virksomhed-myndighed"
 )
@@ -181,7 +208,7 @@ FIELD_CASE_FILE_RECEIVED = (
     "Modtaget sagsakter?"
 )
 
-FIELD_ROBOT_COMMENT = "Robot_kommentar"
+FIELD_ROBOT_COMMENT = "Robot kommentar"
 FIELD_HANDLED_BY = "Behandles af"
 FIELD_DELETE_ROW = "Slet linjen?"
 FIELD_CASE_TYPE_AND_DATE = "Sagstype og dato"

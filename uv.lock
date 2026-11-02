@@ -657,7 +657,7 @@ dependencies = [
 [[package]]
 name = "q-sharepoint-api"
 version = "0.1.0"
-source = { git = "https://github.com/haderslev-rpa/q-sharepoint-api.git?branch=main#4083719db249f04f54b8cd44cc34349a385dc717" }
+source = { git = "https://github.com/haderslev-rpa/q-sharepoint-api.git?branch=main#aebd10eca0720fd0a56839196bda175ad8071050" }
 dependencies = [
     { name = "automation-server-client" },
     { name = "requests" },
