@@ -20,14 +20,52 @@ logger = logging.getLogger(__name__)
 
 
 class States:
-    BORGERBREV_GENERERET = "0.5 Brev til borger genereret"
-    BORGERBREV_SENDT_TIL_SIGNERING = "1.0 Brev sendt til borger og afventer signering"
-    DIGITALT_SAMTYKKE_MODTAGET = "1.5 Digitalt samtykke modtaget"
-    DIGITALT_SAMTYKKE_GEMT_SHAREPOINT = "1.6 Signeret samtykke gemt i SharePoint"
-    MYNDIGHEDSBREV_SENDT = "2.0 Sendt brev til virksomhed-myndighed"
-    MYNDIGHEDSBREV_GEMT_SHAREPOINT = "2.2 Brev til virksomhed-myndighed gemt på SharePoint"
-    RYKKERBREV_SENDT = "2.5 Rykkerbrev sendt til virksomhed-myndighed"
-    RYKKERBREV_GEMT_SHAREPOINT = "2.7 Rykkerbrev gemt på SharePoint"
+    """
+    Processtates og checkpoints.
+
+    behandel.py ejer alle states. Handlingsmodulerne genererer,
+    uploader, downloader og sender kun dokumenterne.
+    """
+
+    BORGERBREV_GENERERET = (
+        "0.5 Brev til borger genereret"
+    )
+
+    BORGERBREV_SENDT_TIL_SIGNERING = (
+        "1.0 Brev sendt til borger og afventer signering"
+    )
+
+    DIGITALT_SAMTYKKE_MODTAGET = (
+        "1.5 Digitalt samtykke modtaget"
+    )
+
+    DIGITALT_SAMTYKKE_GEMT_SHAREPOINT = (
+        "1.6 Signeret samtykke gemt i SharePoint"
+    )
+
+    MYNDIGHEDSBREV_GENERERET = (
+        "1.8 Brev til virksomhed-myndighed genereret"
+    )
+
+    MYNDIGHEDSBREV_GEMT_SHAREPOINT = (
+        "2.2 Brev til virksomhed-myndighed gemt på SharePoint"
+    )
+
+    MYNDIGHEDSBREV_SENDT = (
+        "2.0 Sendt brev til virksomhed-myndighed"
+    )
+
+    RYKKERBREV_GENERERET = (
+        "2.4 Rykkerbrev genereret"
+    )
+
+    RYKKERBREV_GEMT_SHAREPOINT = (
+        "2.7 Rykkerbrev gemt på SharePoint"
+    )
+
+    RYKKERBREV_SENDT = (
+        "2.5 Rykkerbrev sendt til virksomhed-myndighed"
+    )
 
 
 def mangler_state(data: dict[str, Any], state: str) -> bool:
@@ -196,85 +234,364 @@ def _myndighedsdata(item) -> dict[str, Any]:
     return item.data.setdefault("box", {}).setdefault("myndighedsbrev", {})
 
 
-async def _send_myndighedsbrev(item, sharepoint_data: dict[str, Any]) -> None:
-    if mangler_state(item.data, States.MYNDIGHEDSBREV_SENDT):
-        letter = myndighed.opret_myndighedsbrev_pdf(sharepoint_data)
-        consent_name, consent = myndighed.hent_samtykke_som_pdf(item)
+async def _send_myndighedsbrev(
+    item,
+    sharepoint_data: dict[str, Any],
+) -> None:
+    """
+    Behandler myndighedsbrevet i tre genstartbare trin.
+
+    Trin 1:
+        Generér dokumentet og sæt genereret-state.
+
+    Trin 2:
+        Hvis gemt-state mangler, generér dokumentet igen,
+        gem det på SharePoint og sæt gemt-state.
+
+    Trin 3:
+        Hvis sendt-state mangler, hent dokumentet fra SharePoint
+        til memory og send præcis denne fil med Digital Post.
+
+    Hvis Digital Post fejler, er det gemte dokument og gemt-state
+    bevaret. Næste kørsel fortsætter derfor direkte med trin 3.
+    """
+
+    # --------------------------------------------------------
+    # TRIN 1: GENERÉR DOKUMENT
+    # --------------------------------------------------------
+
+    if mangler_state(
+        item.data,
+        States.MYNDIGHEDSBREV_GENERERET,
+    ):
+        myndighed.opret_myndighedsbrev_pdf(
+            sharepoint_data
+        )
+
+        set_state(
+            item.data,
+            item,
+            States.MYNDIGHEDSBREV_GENERERET,
+        )
+
+        logger.info(
+            "Myndighedsbrevet er genereret."
+        )
+
+    # --------------------------------------------------------
+    # TRIN 2: GEM DOKUMENT PÅ SHAREPOINT
+    # --------------------------------------------------------
+
+    if mangler_state(
+        item.data,
+        States.MYNDIGHEDSBREV_GEMT_SHAREPOINT,
+    ):
+        # Dokumentet genereres bevidst igen.
+        # Bytes fra trin 1 gemmes ikke i ATS.
+        letter_to_archive = (
+            myndighed.opret_myndighedsbrev_pdf(
+                sharepoint_data
+            )
+        )
+
+        myndighed.gem_pdf_paa_sharepoint(
+            item=item,
+            pdf_bytes=letter_to_archive,
+            file_name=(
+                cfg.ARCHIVED_AUTHORITY_LETTER_FILE_NAME
+            ),
+        )
+
+        set_state(
+            item.data,
+            item,
+            States.MYNDIGHEDSBREV_GEMT_SHAREPOINT,
+        )
+
+        logger.info(
+            "Myndighedsbrevet er gemt på SharePoint "
+            "som %r.",
+            cfg.ARCHIVED_AUTHORITY_LETTER_FILE_NAME,
+        )
+
+    # --------------------------------------------------------
+    # TRIN 3: SEND DOKUMENTET FRA SHAREPOINT
+    # --------------------------------------------------------
+
+    if mangler_state(
+        item.data,
+        States.MYNDIGHEDSBREV_SENDT,
+    ):
+        letter_from_sharepoint = (
+            myndighed.hent_pdf_fra_sharepoint(
+                item=item,
+                file_name=(
+                    cfg.ARCHIVED_AUTHORITY_LETTER_FILE_NAME
+                ),
+            )
+        )
+
+        consent_name, consent = (
+            myndighed.hent_samtykke_som_pdf(
+                item
+            )
+        )
+
         result = await myndighed.send_digitalpost(
             item=item,
-            letter_pdf=letter,
-            letter_file_name=cfg.MYNDIGHEDSBREV_PDF_FILE_NAME,
+            letter_pdf=letter_from_sharepoint,
+            letter_file_name=(
+                cfg.MYNDIGHEDSBREV_PDF_FILE_NAME
+            ),
             subject="Anmodning om aktindsigt",
             consent_file_name=consent_name,
             consent_pdf=consent,
         )
-        sent_at = datetime.now(timezone.utc).isoformat()
-        update_item_data(item.data, box_updates={"myndighedsbrev": {
-            "forsendelses_id": result.forsendelses_id,
-            "sent_at": sent_at,
-            "reminder_sent_at": None,
-        }}, item=item)
-        set_state(item.data, item, States.MYNDIGHEDSBREV_SENDT)
+
+        sent_at = (
+            datetime.now(timezone.utc)
+            .isoformat()
+        )
+
+        update_item_data(
+            item.data,
+            box_updates={
+                "myndighedsbrev": {
+                    "forsendelses_id":
+                        result.forsendelses_id,
+                    "sent_at":
+                        sent_at,
+                    "reminder_sent_at":
+                        None,
+                    "sharepoint_file_name":
+                        cfg.ARCHIVED_AUTHORITY_LETTER_FILE_NAME,
+                }
+            },
+            item=item,
+        )
+
+        set_state(
+            item.data,
+            item,
+            States.MYNDIGHEDSBREV_SENDT,
+        )
+
         gem_sharepoint_opdateringer(
             item,
-            {cfg.FIELD_LETTER_STATUS: cfg.VALUE_LETTER_SENT},
-            robot_kommentar="Anmodning om aktindsigt er sendt.",
+            {
+                cfg.FIELD_LETTER_STATUS:
+                    cfg.VALUE_LETTER_SENT,
+            },
+            robot_kommentar=(
+                "Sendt brev til myndighed"
+            ),
         )
-        try:
-            myndighed.gem_pdf_paa_sharepoint(item, letter, cfg.ARCHIVED_AUTHORITY_LETTER_FILE_NAME)
-            set_state(item.data, item, States.MYNDIGHEDSBREV_GEMT_SHAREPOINT)
-        except Exception:
-            logger.exception("Brevet blev sendt, men kunne ikke gemmes på SharePoint.")
-        udsaet_til_naeste_dag(item, "Afventer svar fra virksomhed eller myndighed.")
-        return
 
-    if mangler_state(item.data, States.MYNDIGHEDSBREV_GEMT_SHAREPOINT):
-        regenerated = myndighed.opret_myndighedsbrev_pdf(sharepoint_data)
-        myndighed.gem_pdf_paa_sharepoint(item, regenerated, cfg.REGENERATED_AUTHORITY_LETTER_FILE_NAME)
-        gem_sharepoint_opdateringer(item, {}, robot_kommentar="Vedhæftet myndighedsbrev er regenereret i dag.")
-        set_state(item.data, item, States.MYNDIGHEDSBREV_GEMT_SHAREPOINT)
+        logger.info(
+            "Myndighedsbrevet er sendt med den PDF, "
+            "som blev hentet fra SharePoint."
+        )
 
-    await _kontroller_myndighedsfrist(item, sharepoint_data)
+    # --------------------------------------------------------
+    # TRIN 4: AFVENT SVAR
+    # --------------------------------------------------------
+
+    udsaet_til_naeste_dag(
+        item,
+        (
+            "Afventer svar fra virksomhed "
+            "eller myndighed."
+        ),
+    )
 
 
-async def _send_rykker(item, sharepoint_data: dict[str, Any]) -> None:
-    if mangler_state(item.data, States.RYKKERBREV_SENDT):
-        reminder = myndighed.opret_rykkerbrev_pdf(sharepoint_data)
-        consent_name, consent = myndighed.hent_samtykke_som_pdf(item)
+async def _send_rykker(
+    item,
+    sharepoint_data: dict[str, Any],
+) -> None:
+    """
+    Behandler rykkerbrevet i tre genstartbare trin.
+
+    Trin 1:
+        Generér rykkerbrevet.
+
+    Trin 2:
+        Hvis gemt-state mangler, generér rykkeren igen
+        og gem den på SharePoint.
+
+    Trin 3:
+        Hent den gemte rykker fra SharePoint og send den
+        med Digital Post.
+
+    Den oprindelige myndighedsanmodning hentes også fra
+    SharePoint og medsendes som bilag.
+    """
+
+    # --------------------------------------------------------
+    # TRIN 1: GENERÉR RYKKERBREV
+    # --------------------------------------------------------
+
+    if mangler_state(
+        item.data,
+        States.RYKKERBREV_GENERERET,
+    ):
+        myndighed.opret_rykkerbrev_pdf(
+            sharepoint_data
+        )
+
+        set_state(
+            item.data,
+            item,
+            States.RYKKERBREV_GENERERET,
+        )
+
+        logger.info(
+            "Rykkerbrevet er genereret."
+        )
+
+    # --------------------------------------------------------
+    # TRIN 2: GEM RYKKERBREV PÅ SHAREPOINT
+    # --------------------------------------------------------
+
+    if mangler_state(
+        item.data,
+        States.RYKKERBREV_GEMT_SHAREPOINT,
+    ):
+        # Genereres bevidst igen ved uploadtrinnet.
+        reminder_to_archive = (
+            myndighed.opret_rykkerbrev_pdf(
+                sharepoint_data
+            )
+        )
+
+        myndighed.gem_pdf_paa_sharepoint(
+            item=item,
+            pdf_bytes=reminder_to_archive,
+            file_name=(
+                cfg.ARCHIVED_REMINDER_FILE_NAME
+            ),
+        )
+
+        set_state(
+            item.data,
+            item,
+            States.RYKKERBREV_GEMT_SHAREPOINT,
+        )
+
+        logger.info(
+            "Rykkerbrevet er gemt på SharePoint "
+            "som %r.",
+            cfg.ARCHIVED_REMINDER_FILE_NAME,
+        )
+
+    # --------------------------------------------------------
+    # TRIN 3: SEND RYKKEREN FRA SHAREPOINT
+    # --------------------------------------------------------
+
+    if mangler_state(
+        item.data,
+        States.RYKKERBREV_SENDT,
+    ):
+        reminder_from_sharepoint = (
+            myndighed.hent_pdf_fra_sharepoint(
+                item=item,
+                file_name=(
+                    cfg.ARCHIVED_REMINDER_FILE_NAME
+                ),
+            )
+        )
+
+        original_letter_from_sharepoint = (
+            myndighed.hent_pdf_fra_sharepoint(
+                item=item,
+                file_name=(
+                    cfg.ARCHIVED_AUTHORITY_LETTER_FILE_NAME
+                ),
+            )
+        )
+
+        consent_name, consent = (
+            myndighed.hent_samtykke_som_pdf(
+                item
+            )
+        )
+
         result = await myndighed.send_digitalpost(
             item=item,
-            letter_pdf=reminder,
-            letter_file_name=cfg.RYKKERBREV_PDF_FILE_NAME,
-            subject="Rykker vedrørende anmodning om aktindsigt",
-            consent_file_name=consent_name,
-            consent_pdf=consent,
+            letter_pdf=reminder_from_sharepoint,
+            letter_file_name=(
+                cfg.RYKKERBREV_PDF_FILE_NAME
+            ),
+            subject=(
+                "Rykker vedrørende anmodning "
+                "om aktindsigt"
+            ),
+            attachments=[
+                (
+                    consent_name,
+                    consent,
+                ),
+                (
+                    cfg.ARCHIVED_AUTHORITY_LETTER_FILE_NAME,
+                    original_letter_from_sharepoint,
+                ),
+            ],
         )
-        data = _myndighedsdata(item)
-        data.update({
-            "reminder_forsendelses_id": result.forsendelses_id,
-            "reminder_sent_at": datetime.now(timezone.utc).isoformat(),
-        })
-        update_item_data(item.data, item=item)
-        set_state(item.data, item, States.RYKKERBREV_SENDT)
+
+        authority_data = _myndighedsdata(
+            item
+        )
+
+        authority_data.update(
+            {
+                "reminder_forsendelses_id":
+                    result.forsendelses_id,
+                "reminder_sent_at":
+                    datetime.now(
+                        timezone.utc
+                    ).isoformat(),
+                "reminder_sharepoint_file_name":
+                    cfg.ARCHIVED_REMINDER_FILE_NAME,
+                "original_letter_attachment":
+                    cfg.ARCHIVED_AUTHORITY_LETTER_FILE_NAME,
+            }
+        )
+
+        update_item_data(
+            item.data,
+            item=item,
+        )
+
+        set_state(
+            item.data,
+            item,
+            States.RYKKERBREV_SENDT,
+        )
+
         gem_sharepoint_opdateringer(
             item,
-            {cfg.FIELD_LETTER_STATUS: cfg.VALUE_REMINDER_SENT},
-            robot_kommentar="Rykker om aktindsigt er sendt.",
+            {
+                cfg.FIELD_LETTER_STATUS:
+                    cfg.VALUE_REMINDER_SENT,
+            },
+            robot_kommentar=(
+                "Sendt rykkerbrev til myndighed"
+            ),
         )
-        try:
-            myndighed.gem_pdf_paa_sharepoint(item, reminder, cfg.ARCHIVED_REMINDER_FILE_NAME)
-            set_state(item.data, item, States.RYKKERBREV_GEMT_SHAREPOINT)
-        except Exception:
-            logger.exception("Rykkeren blev sendt, men kunne ikke gemmes på SharePoint.")
-        udsaet_til_naeste_dag(item, "Afventer svar efter sendt rykker.")
-        return
 
-    if mangler_state(item.data, States.RYKKERBREV_GEMT_SHAREPOINT):
-        regenerated = myndighed.opret_rykkerbrev_pdf(sharepoint_data)
-        myndighed.gem_pdf_paa_sharepoint(item, regenerated, cfg.REGENERATED_REMINDER_FILE_NAME)
-        gem_sharepoint_opdateringer(item, {}, robot_kommentar="Vedhæftet rykkerbrev er regenereret i dag.")
-        set_state(item.data, item, States.RYKKERBREV_GEMT_SHAREPOINT)
-    udsaet_til_naeste_dag(item, "Afventer svar efter sendt rykker.")
+        logger.info(
+            "Rykkerbrevet er sendt med filerne "
+            "fra SharePoint."
+        )
+
+    # --------------------------------------------------------
+    # TRIN 4: AFVENT SVAR
+    # --------------------------------------------------------
+
+    udsaet_til_naeste_dag(
+        item,
+        "Afventer svar efter sendt rykker.",
+    )
 
 
 async def _kontroller_myndighedsfrist(item, sharepoint_data: dict[str, Any]) -> None:

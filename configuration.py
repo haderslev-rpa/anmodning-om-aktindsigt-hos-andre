@@ -130,14 +130,44 @@ BORGERBREV_PLACEHOLDERS = (
 
 MYNDIGHEDSBREV_PLACEHOLDERS = (
     "DATO",
-    "SAGSTYPE_OG_DATO",
+    "NAVN",
+    "CPR",
+    "SAGSTYPE",
     "INSTITUTIONSNAVN",
+    "FLEKSJOB",
 )
 
 RYKKERBREV_PLACEHOLDERS = (
     "DATO",
-    "SAGSTYPE_OG_DATO",
+    "SAGSTYPE",
     "INSTITUTIONSNAVN",
+)
+
+# ------------------------------------------------------------
+# FLEKSJOBSAG
+# ------------------------------------------------------------
+
+# Værdien sammenlignes med sagstypen efter fjernelse af:
+#
+#     " - DD-MM-ÅÅÅÅ"
+#
+# Sammenligningen sker uden forskel på store og små bogstaver.
+FLEXJOB_CASE_TYPE_VALUE = "Flexjobsag"
+
+# Linjeskift bevares af q-word som Word-linjeskift.
+FLEXJOB_AUTHORITY_TEXT = (
+    "Borgeren er visiteret til fleksjob\n"
+    "Hvis borgeren er visiteret til fleksjob, beder vi desuden "
+    "om at modtage:\n"
+    "• datoen for visitation til fleksjob\n"
+    "• afgørelser vedrørende fleksjob og øvrige relevante afgørelser\n"
+    "• lægelige oplysninger\n"
+    "• relevante journalnotater\n"
+    "• øvrige oplysninger og dokumenter, der har dannet grundlag "
+    "for visitationen.\n"
+    "\n"
+    "Vi beder jer desuden om at frigive borgerens sag i VITAS, "
+    "så Haderslev Kommune kan overtage den."
 )
 
 
