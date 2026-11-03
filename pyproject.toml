@@ -13,6 +13,7 @@ dependencies = [
   "q-signeringsportalen-api",
   "q-fasit",
   "q-outlook-api",
+  "q-digitalpost",
 ]
 
 [tool.uv.sources]
@@ -21,6 +22,7 @@ q-haderslev-vbo = { git = "https://github.com/haderslev-rpa/q-haderslev-vbo.git"
 q-sharepoint-api = { git = "https://github.com/haderslev-rpa/q-sharepoint-api.git", branch = "main" }
 q-datafordeleren-api = {git = "https://github.com/haderslev-rpa/q-datafordeleren-api.git", branch = "main" }
 q-word = { git = "https://github.com/haderslev-rpa/q-word.git", branch = "main" }
+q-digitalpost = { git = "https://github.com/haderslev-rpa/q-digitalpost.git", branch = "main" }
 q-gotenberg-api = { git = "https://github.com/haderslev-rpa/q-gotenberg-api.git", branch = "main" }
 q-signeringsportalen-api = { git = "https://github.com/haderslev-rpa/q-signeringsportalen-api.git", branch = "main" }
 q-fasit = { git = "https://github.com/haderslev-rpa/q-fasit.git", branch = "master" }
